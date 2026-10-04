@@ -1,0 +1,12 @@
+[Unit]
+Description=edge-scout: record public crypto market data (no keys, no trading)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/edge-scout
+ExecStart=%h/edge-scout/.venv/bin/python -m edgescout scan --minutes 5256000 --quiet
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
