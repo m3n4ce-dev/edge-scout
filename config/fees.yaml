@@ -1,0 +1,20 @@
+# Fees in % per trade (one side). The whole question is whether an edge survives THESE, so keep them current.
+# "verified" = checked against the venue's published schedule on the date given; anything else is a
+# placeholder to confirm before trusting a result built on it.
+tier: entry          # which tier the report treats as yours: entry | t10k (30-day volume $10K-$50K)
+cash_yield_pct: 4.0  # what idle USD earns elsewhere (T-bills / money market) - update; a carry trade must beat it
+
+spot:
+  coinbase:  {entry: {maker: 0.60, taker: 1.20}, t10k: {maker: 0.25, taker: 0.40}, verified: "2026-10-04 (datawallet, primexbt summaries)"}
+  kraken:    {entry: {maker: 0.40, taker: 0.80}, t10k: {maker: 0.20, taker: 0.35}, verified: "entry 2026-10-04 (July 9, 2026 schedule); t10k unverified"}
+  gemini:    {entry: {maker: 0.60, taker: 1.20}, t10k: {maker: 0.40, taker: 0.80}, verified: "2026-10-04 (July 9, 2026 schedule)"}
+  bitstamp:  {entry: {maker: 0.30, taker: 0.40}, t10k: {maker: 0.20, taker: 0.30}, verified: false}
+  binanceus: {entry: {maker: 0.60, taker: 0.60}, t10k: {maker: 0.40, taker: 0.40}, verified: false}
+
+futures:              # perps and dated futures, per side
+  coinbase_cde:   {maker: 0.02, taker: 0.02, verified: false}   # per-contract fee, ~0.02% of a nano BTC contract
+  hyperliquid:    {maker: 0.015, taker: 0.045, verified: false}
+  okx:            {maker: 0.02, taker: 0.05, verified: false}
+  dydx:           {maker: 0.01, taker: 0.05, verified: false}
+  deribit:        {maker: 0.00, taker: 0.05, verified: false}
+  kraken_futures: {maker: 0.02, taker: 0.05, verified: false}
