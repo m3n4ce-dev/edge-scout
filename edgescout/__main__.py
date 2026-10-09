@@ -24,6 +24,7 @@ def main() -> None:
     s.add_argument("--quiet", action="store_true")
     m = sub.add_parser("m1", help="M1: Kalshi vs options-implied probabilities (docs/M1_KALSHI.md)")
     m.add_argument("--holdout", action="store_true", help="the holdout window (refused until it's complete)")
+    m.add_argument("--cross", action="store_true", help="M1b: Kalshi vs Polymarket on the same events")
     m.add_argument("--json", help="also write the result here")
     r = sub.add_parser("report", help="summarize recorded scans")
     r.add_argument("--file", nargs="+")
@@ -34,7 +35,7 @@ def main() -> None:
     elif a.cmd == "m1":
         from .m1 import run
         from .scan import DATA
-        out = run(DATA, holdout=a.holdout)
+        out = run(DATA, holdout=a.holdout, cross=a.cross)
         print(json.dumps(out, indent=1))
         if a.json:
             Path(a.json).write_text(json.dumps(out, indent=1))

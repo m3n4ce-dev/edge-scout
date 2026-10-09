@@ -54,7 +54,7 @@ That takes measurement over weeks, not screenshots. The same rules as `meme_trad
 ## Milestones
 
 - **M0, now:** the recorder runs 24/7 (`scripts/edge-scout.service`). After 2 weeks, report funding persistence, basis behaviour and spot dislocations with real frequencies.
-- **M1:** a Kalshi + Deribit recorder (option-implied probabilities for each bracket), then a calibration report. *Recording since 2026-10-09; the analysis and its verdict rules were registered before any data (docs/M1_KALSHI.md, `python -m edgescout m1`): a 7-day development window, then a 14-day holdout.*
+- **M1:** a Kalshi + Deribit recorder (option-implied probabilities for each bracket), then a calibration report. *Recording since 2026-10-09; the analysis and its verdict rules were registered before any data (docs/M1_KALSHI.md, `python -m edgescout m1`): a 7-day development window, then a 14-day holdout.* *M1b, the same events on Polymarket, has been recorded since 2026-10-09 02:xx UTC (`--cross`): Polymarket is a price signal for a US resident, and the tradable leg is Kalshi.*
 
 **Funding persistence, 2026-10-09** (M0, 4.8 days: 10-04 00:00 to 10-09 01:00 UTC). The US-perp lead didn't persist. Daily mean funding, annualized:
 
