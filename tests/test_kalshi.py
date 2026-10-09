@@ -5,6 +5,13 @@ from unittest.mock import patch
 
 from edgescout import kalshi, scan
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_pacing(monkeypatch):
+    monkeypatch.setattr(kalshi, "PACE_S", 0)
+
 
 # Test 1: market_row converts dollar strings to floats and close_time ISO to unix timestamp
 def test_market_row_conversions():
@@ -406,3 +413,20 @@ def test_scan_loop_writes_kalshi_kinds(tmp_path, monkeypatch):
         assert "EV1" in all_events
 
     asyncio.run(run_test())
+
+
+def test_kalshi_requests_go_one_at_a_time(monkeypatch):
+    """A burst of concurrent requests got HTTP 429 live: series are fetched in turn, never overlapping."""
+    state = {"active": 0, "max": 0, "n": 0}
+
+    async def fake(c, url, params=None, **kw):
+        state["active"] += 1
+        state["max"] = max(state["max"], state["active"])
+        state["n"] += 1
+        await asyncio.sleep(0)
+        state["active"] -= 1
+        return {"markets": [], "cursor": None}
+    monkeypatch.setattr(kalshi, "_get", fake)
+    asyncio.run(kalshi.kalshi_open(None))
+    asyncio.run(kalshi.kalshi_settled(None, 0))
+    assert state["max"] == 1 and state["n"] == 2 * len(kalshi.SERIES)
