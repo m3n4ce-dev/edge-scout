@@ -58,3 +58,26 @@ Nothing is traded; no account or key is used.
 **Reading it** (the rule differs from M2-pre because LIP rewards would come on top):
 - **Proceed to a forward LIP simulation** (order-book share, fills, markouts) if the all-maker 90% interval's **upper** bound is above −0.5¢ per contract, i.e. makers can't be shown to lose half a cent or more. Its favourite and category results pick where to look first.
 - **Stop** if the whole interval is below −0.5¢: rewards would then need to pay more than half a cent on every filled contract, which the median pool won't.
+
+## M2-pre-b result (2026-10-10 00:0x UTC)
+
+**Coverage.** 603 of 605 settled events were pulled. Two (KXAAAGASDNC-26SEP12 and -26SEP15) failed on HTTP 500 from Kalshi, and they're excluded. 418 events had trades in the public tape's period, about 80M contracts.
+
+**Verdict, per the registration: stop.** All makers made **−1.21¢ per contract** (90%: −1.50 to −0.90), so the whole interval is below −0.5¢. LIP rewards would have to pay more than half a cent on every filled contract.
+
+| Maker value, ¢/contract | Whole period | First half (114 events) | Second half (304) |
+|---|---|---|---|
+| All makers | −1.21 (−1.50, −0.90) | −0.21 | −1.58 |
+| Favourites ≥ 70¢ | +0.79 (−0.53, +2.02) | −0.49 | +1.29 |
+| Takers after fee | +0.86 | −0.23 | +1.26 |
+
+**By the maker's price** (whole period): 1–10¢ −0.78; 10–30¢ −3.70; 30–50¢ −5.87; 50–70¢ −0.04; **70–90¢ +4.74 (+2.47, +7.02)**, which is +0.95 and +6.25 by half; 90–99¢ −0.56.
+
+**By category** (all makers; favourites):
+- gas: −2.59; −0.35;
+- **weather (rain): +1.21 (+0.93, +1.50); +1.79 (+0.95, +2.60)**;
+- entertainment: −0.24; −0.65;
+- politics: +0.56; +0.11;
+- YouTube: −0.96; +2.81 (+0.28, +4.98).
+
+**Exploratory, not decisions.** Two cells stand out: makers buying at 70–90¢ (the favourite side of the favourite-longshot bias) and rain markets. They were found by looking at many cells of the same history, so they are hypotheses. Any test of them must be registered first and judged on data recorded after registration.
