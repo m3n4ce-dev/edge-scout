@@ -8,7 +8,7 @@ import json
 import time
 from pathlib import Path
 
-from . import kalshi, polymarket, venues
+from . import bitnomial, kalshi, polymarket, venues
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -21,11 +21,12 @@ def _write(kind: str, rows: list, errors: dict) -> None:
 
 
 async def scan(minutes: float, spot_every: float = 10, deriv_every: float = 60, quiet: bool = False,
-               kalshi_every: float = 60, settled_every: float = 600) -> None:
+               kalshi_every: float = 60, settled_every: float = 600, bitnomial_every: float = 1800) -> None:
     end = time.time() + minutes * 60
     last_deriv = last_kalshi = 0.0
     last_settled = time.time() - kalshi.SETTLED_LOOKBACK_S
     settled_seen: set = set()                            # events already written: each settled event once
+    last_bitnomial, funding_seen = 0.0, set()            # M3: Bitnomial funding, each (product, interval) once
     async with venues.client() as c:
         while time.time() < end:
             t0 = time.time()
@@ -63,4 +64,10 @@ async def scan(minutes: float, spot_every: float = 10, deriv_every: float = 60, 
                     settled_seen.update(("pm", r["event"]) for r in pnew)
                     _write("polymarket_settled", pnew, pserr)
                     last_settled = t0
+            if bitnomial_every and t0 - last_bitnomial >= bitnomial_every:
+                last_bitnomial = t0
+                bn, berr = await bitnomial.bitnomial_funding(c, t0)
+                new = [r for r in bn if (r["product_id"], r["interval_start"]) not in funding_seen]
+                funding_seen.update((r["product_id"], r["interval_start"]) for r in new)
+                _write("bitnomial_funding", new, berr)
             await asyncio.sleep(max(0.0, spot_every - (time.time() - t0)))
