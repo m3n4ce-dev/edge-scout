@@ -29,6 +29,8 @@ DERIBIT_MAX_DAYS = 3                                     # Kalshi's markets clos
 DERIBIT_BAND = 0.10                                      # strikes within +-10% of the index
 MID_RANGE = (0.02, 0.98)                                 # a Kalshi market is kept while its mid is inside this
 SETTLED_LOOKBACK_S = 6 * 3600
+PACE_S = 0.25                                            # Kalshi's requests one at a time, this far apart (a burst
+                                                         # of eight got HTTP 429 on the first live pass)
 
 
 def _f(x) -> float | None:
@@ -55,15 +57,27 @@ async def _get(c: httpx.AsyncClient, url: str, **kw):
 
 
 async def _markets(c, series: str, **params) -> list[dict]:
-    """Every market of a series with these filters, following the cursor (bounded)."""
+    """Every market of a series with these filters, following the cursor (bounded), each page PACE_S apart."""
     out, cursor = [], None
     for _ in range(10):
         q = {"series_ticker": series, "limit": 1000, **params, **({"cursor": cursor} if cursor else {})}
+        await asyncio.sleep(PACE_S)
         d = await _get(c, f"{KALSHI}/markets", params=q)
         out += d.get("markets") or []
         cursor = d.get("cursor")
         if not cursor:
             break
+    return out
+
+
+async def _each(c, **params) -> list:
+    """Every series in turn (not concurrently): its markets, or the exception that stopped it."""
+    out = []
+    for s in SERIES:
+        try:
+            out.append(await _markets(c, s, **params))
+        except Exception as ex:                          # noqa: BLE001 - reported per series by the caller
+            out.append(ex)
     return out
 
 
@@ -90,7 +104,7 @@ def informative(r: dict) -> bool:
 
 async def kalshi_open(c: httpx.AsyncClient) -> tuple[list[dict], dict]:
     rows, errors = [], {}
-    res = await asyncio.gather(*(_markets(c, s, status="open") for s in SERIES), return_exceptions=True)
+    res = await _each(c, status="open")
     for s, r in zip(SERIES, res):
         if isinstance(r, Exception):
             errors[f"kalshi:{s}"] = f"{type(r).__name__}: {str(r)[:120]}"
@@ -103,8 +117,7 @@ async def kalshi_settled(c: httpx.AsyncClient, since: float) -> tuple[list[dict]
     """Events whose markets closed since `since`: one row each - the settlement index value, the rule text, and every
     market's [strike_type, floor, cap, result]."""
     rows, errors = [], {}
-    res = await asyncio.gather(*(_markets(c, s, status="settled", min_close_ts=int(since)) for s in SERIES),
-                               return_exceptions=True)
+    res = await _each(c, status="settled", min_close_ts=int(since))
     for s, r in zip(SERIES, res):
         if isinstance(r, Exception):
             errors[f"kalshi:{s}"] = f"{type(r).__name__}: {str(r)[:120]}"
