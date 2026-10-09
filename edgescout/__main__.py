@@ -26,12 +26,17 @@ def main() -> None:
     m.add_argument("--holdout", action="store_true", help="the holdout window (refused until it's complete)")
     m.add_argument("--cross", action="store_true", help="M1b: Kalshi vs Polymarket on the same events")
     m.add_argument("--json", help="also write the result here")
+    sub.add_parser("m3", help="M3: Bitnomial fixed vs Coinbase floating funding, the paper position")
     r = sub.add_parser("report", help="summarize recorded scans")
     r.add_argument("--file", nargs="+")
     r.add_argument("--json", help="also write the summary here")
     a = ap.parse_args()
     if a.cmd == "scan":
         asyncio.run(scan(a.minutes, a.spot_every, a.deriv_every, a.quiet))
+    elif a.cmd == "m3":
+        from .m3 import run as run_m3
+        from .scan import DATA
+        print(json.dumps(run_m3(DATA), indent=1))
     elif a.cmd == "m1":
         from .m1 import run
         from .scan import DATA
