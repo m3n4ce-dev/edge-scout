@@ -8,7 +8,7 @@ import json
 import time
 from pathlib import Path
 
-from . import venues
+from . import kalshi, venues
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -20,9 +20,12 @@ def _write(kind: str, rows: list, errors: dict) -> None:
         f.write(json.dumps({"t": round(time.time(), 3), "kind": kind, "rows": rows, "errors": errors}) + "\n")
 
 
-async def scan(minutes: float, spot_every: float = 10, deriv_every: float = 60, quiet: bool = False) -> None:
+async def scan(minutes: float, spot_every: float = 10, deriv_every: float = 60, quiet: bool = False,
+               kalshi_every: float = 60, settled_every: float = 600) -> None:
     end = time.time() + minutes * 60
-    last_deriv = 0.0
+    last_deriv = last_kalshi = 0.0
+    last_settled = time.time() - kalshi.SETTLED_LOOKBACK_S
+    settled_seen: set = set()                            # events already written: each settled event once
     async with venues.client() as c:
         while time.time() < end:
             t0 = time.time()
@@ -42,4 +45,16 @@ async def scan(minutes: float, spot_every: float = 10, deriv_every: float = 60, 
                     print(f"{time.strftime('%H:%M:%S')} spot {len(spot)} rows, funding {len(fund)}, futures {len(fut)}"
                           + (f" | unreachable: {', '.join({**err, **ferr, **uerr})}" if {**err, **ferr, **uerr} else ""),
                           flush=True)
+            if kalshi_every and t0 - last_kalshi >= kalshi_every:      # M1: Kalshi beside Deribit's options
+                last_kalshi = t0
+                k, kerr = await kalshi.kalshi_open(c)
+                _write("kalshi", k, kerr)
+                o, oerr = await kalshi.deribit_options(c, t0)
+                _write("deribit_options", o, oerr)
+                if t0 - last_settled >= settled_every:
+                    st, serr = await kalshi.kalshi_settled(c, last_settled - kalshi.SETTLED_LOOKBACK_S)
+                    new = [r for r in st if r["event"] not in settled_seen]
+                    settled_seen.update(r["event"] for r in new)
+                    _write("kalshi_settled", new, serr)
+                    last_settled = t0
             await asyncio.sleep(max(0.0, spot_every - (time.time() - t0)))

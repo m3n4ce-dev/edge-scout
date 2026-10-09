@@ -54,7 +54,18 @@ That takes measurement over weeks, not screenshots. The same rules as `meme_trad
 ## Milestones
 
 - **M0, now:** the recorder runs 24/7 (`scripts/edge-scout.service`). After 2 weeks, report funding persistence, basis behaviour and spot dislocations with real frequencies.
-- **M1:** a Kalshi + Deribit recorder (option-implied probabilities for each bracket), then a calibration report.
+- **M1:** a Kalshi + Deribit recorder (option-implied probabilities for each bracket), then a calibration report. *Recording since 2026-10-09; the analysis and its verdict rules were registered before any data (docs/M1_KALSHI.md, `python -m edgescout m1`): a 7-day development window, then a 14-day holdout.*
+
+**Funding persistence, 2026-10-09** (M0, 4.8 days: 10-04 00:00 to 10-09 01:00 UTC). The US-perp lead didn't persist. Daily mean funding, annualized:
+
+| Contract | 10-04 | 10-05 | 10-06 | 10-07 | 10-08 | 10-09 (partial) |
+|---|---|---|---|---|---|---|
+| Coinbase LINK | 13.3% | 16.9% | 24.5% | 8.8% | 1.8% | −3.0% |
+| Coinbase AVAX | 12.7% | 10.8% | 13.6% | 13.6% | −4.7% | 6.1% |
+| Coinbase BTC / ETH | about 3–5% throughout, about cash | | | | | |
+| Kraken SOL | 23.3% | −6.2% | 14.3% | −1.6% | 4.9% | 25.8% |
+
+The longest stretch above 5%/yr was 54 hours (LINK). Spikes revert within days, and a 30–90 day carry at entry-tier fees doesn't clear cash on this evidence. Recording continues to the 2-week report.
 - **M2:** freeze the best candidate (rules, sizes, costs, kill criteria) and paper-trade it with realistic fills.
 - **M3:** a tiny live pilot, sized by the owner (e.g. $200–500), only with an explicit OK, reconciled against the paper model.
 - **M4:** scale only what survives, re-measuring at each step.
