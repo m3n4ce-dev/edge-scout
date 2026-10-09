@@ -22,12 +22,22 @@ def main() -> None:
     s.add_argument("--spot-every", type=float, default=10)
     s.add_argument("--deriv-every", type=float, default=60)
     s.add_argument("--quiet", action="store_true")
+    m = sub.add_parser("m1", help="M1: Kalshi vs options-implied probabilities (docs/M1_KALSHI.md)")
+    m.add_argument("--holdout", action="store_true", help="the holdout window (refused until it's complete)")
+    m.add_argument("--json", help="also write the result here")
     r = sub.add_parser("report", help="summarize recorded scans")
     r.add_argument("--file", nargs="+")
     r.add_argument("--json", help="also write the summary here")
     a = ap.parse_args()
     if a.cmd == "scan":
         asyncio.run(scan(a.minutes, a.spot_every, a.deriv_every, a.quiet))
+    elif a.cmd == "m1":
+        from .m1 import run
+        from .scan import DATA
+        out = run(DATA, holdout=a.holdout)
+        print(json.dumps(out, indent=1))
+        if a.json:
+            Path(a.json).write_text(json.dumps(out, indent=1))
     else:
         s = summarize(read([Path(f) for f in a.file] if a.file else None))
         print_summary(s)
