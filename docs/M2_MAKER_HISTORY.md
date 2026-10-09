@@ -24,7 +24,7 @@ Per contract, the maker's value is 1 if its side won, minus its price, minus a m
 
 Nothing is traded; no account or key is used.
 
-## Result (2026-10-09 23:1x UTC; all 118 registered events pulled, ~40M contracts)
+## Result (2026-10-09 22:56 UTC; all 118 registered events pulled, ~40M contracts)
 
 | Contrast (maker value, ¢ per contract) | Whole period | 08-11..09-09 | 09-10..10-08 |
 |---|---|---|---|
@@ -32,7 +32,7 @@ Nothing is traded; no account or key is used.
 | All makers | −0.95 | −0.27 | −1.66 |
 | All takers, after the taker fee | −0.17 | −0.83 | +0.52 |
 
-- **By the maker's price** (whole period): 1–10¢ −0.41, 10–30¢ −1.52, 30–50¢ −0.85, 50–70¢ −1.22, 70–90¢ −0.40, 90–99¢ +0.40. Every interval includes 0 except none.
+- **By the maker's price** (whole period): 1–10¢ −0.41, 10–30¢ −1.52, 30–50¢ −0.85, 50–70¢ −1.22, 70–90¢ −0.40, 90–99¢ +0.40. Every one of these intervals includes 0.
 - **By time to close:** ≤ 5 min −0.83 (−1.67 to −0.08); 5–15 min −0.35; 15–60 min −0.90 (−1.82 to −0.02).
 
 **Verdict, per the registration: stop on these series.** The favourite contrast is not above +0.5¢ in both halves, and its lower bound is below 0.
