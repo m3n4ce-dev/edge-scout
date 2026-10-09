@@ -95,6 +95,78 @@ def pull() -> None:
             print(f"{ev}: {len(e['markets'])} markets, {sum(len(m['trades']) for m in e['markets'])} trades", flush=True)
 
 
+# ---------------------------------------------------------------- M2-pre-b: the LIP series (registered 2026-10-09)
+LIP_SERIES = {"KXRT": "entertainment", "KXNFLLADDERREC": "nfl_props", "KXNFLLADDERRECYDS": "nfl_props",
+              "KXNFLFFPTSLADDER": "nfl_props", "KXAAAGASDOH": "gas", "KXAAAGASDCO": "gas", "KXAAAGASDIN": "gas",
+              "KXAAAGASDMI": "gas", "KXAAAGASDNC": "gas", "KXAAAGASDSC": "gas", "KXAAAGASDTN": "gas",
+              "KXTRUMPAPPROVE": "politics", "KXRAIN": "weather", "KXYTVIEWSW": "youtube"}
+TAPE_START = "2026-08-10T00:00:00Z"
+LIP_DATA = DATA.parent / "maker_history_lip"
+
+
+def lip_events(c: httpx.Client) -> list[tuple[str, str]]:
+    out = []
+    for s in LIP_SERIES:
+        cursor = None
+        for _ in range(20):
+            d = _get(c, "/events", series_ticker=s, status="settled", limit=200, **({"cursor": cursor} if cursor else {}))
+            out += [(e["event_ticker"], s) for e in d.get("events") or []]
+            cursor = d.get("cursor")
+            if not cursor:
+                break
+    return out
+
+
+def pull_lip() -> None:
+    LIP_DATA.mkdir(parents=True, exist_ok=True)
+    with httpx.Client(timeout=20) as c:
+        evs = lip_events(c)
+        print(f"{len(evs)} settled events", flush=True)
+        for ev, s in evs:
+            p = LIP_DATA / f"{ev}.json.gz"
+            if p.exists():
+                continue
+            try:
+                e = pull_event(c, ev)
+            except Exception as ex:                      # noqa: BLE001 - logged; the next run retries it
+                print(f"{ev}: {type(ex).__name__}: {str(ex)[:120]}", flush=True)
+                continue
+            e["series"] = s
+            for m in e["markets"]:                       # only the public tape's period counts
+                m["trades"] = [t for t in m["trades"] if t[0] >= TAPE_START]
+            p.write_bytes(gzip.compress(json.dumps(e).encode()))
+            print(f"{ev}: {len(e['markets'])} markets, {sum(len(m['trades']) for m in e['markets'])} trades", flush=True)
+
+
+def report_lip() -> dict:
+    by: dict = {"all": {}, "first_half": {}, "second_half": {}}
+    cat: dict = {}
+    for p in sorted(LIP_DATA.glob("*.json.gz")):
+        e = json.loads(gzip.decompress(p.read_bytes()))
+        rows = maker_rows(e)
+        if not rows:
+            continue
+        last = max((m["close"] for m in e["markets"] if m.get("close")), default=None)
+        if last is None:
+            continue
+        ev = e["event"]
+        by["all"][ev] = rows
+        by["first_half" if last < SPLIT.isoformat() else "second_half"][ev] = rows
+        cat.setdefault(LIP_SERIES.get(e.get("series"), "?"), {})[ev] = rows
+    out = {"events_with_trades": len(by["all"])}
+    for part, rbe in by.items():
+        out[part] = {"all_makers": contrast(rbe, lambda r: True),
+                     "favourite_maker": contrast(rbe, lambda r: r["price"] >= FAVOURITE),
+                     "maker_by_price": {f"{lo:.2f}-{hi:.2f}": contrast(rbe, lambda r, lo=lo, hi=hi: lo <= r["price"] < hi)
+                                        for lo, hi in PRICE_BUCKETS},
+                     "all_takers_after_fee": contrast(rbe, lambda r: True, key="taker_value")}
+    out["by_category"] = {k: {"all_makers": contrast(v, lambda r: True),
+                              "favourite_maker": contrast(v, lambda r: r["price"] >= FAVOURITE)} for k, v in cat.items()}
+    hi = out["all"]["all_makers"]["hi90"]
+    out["verdict"] = "proceed to the forward LIP simulation" if hi is not None and hi > -0.5 else "stop"
+    return out
+
+
 def taker_fee(p: float, n: float) -> float:
     """Per contract, Kalshi's quadratic taker fee rounded up per trade of n contracts."""
     return math.ceil(round(0.07 * n * p * (1 - p) * 100, 9)) / 100 / n if n > 0 else 0.0
@@ -165,14 +237,16 @@ def report() -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(prog="edgescout.maker_history")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("pull")
+    pl = sub.add_parser("pull")
+    pl.add_argument("--study", choices=["crypto", "lip"], default="crypto")
     r = sub.add_parser("report")
+    r.add_argument("--study", choices=["crypto", "lip"], default="crypto")
     r.add_argument("--json")
     a = ap.parse_args()
     if a.cmd == "pull":
-        pull()
+        pull_lip() if a.study == "lip" else pull()
     else:
-        out = report()
+        out = report_lip() if a.study == "lip" else report()
         print(json.dumps(out, indent=1))
         if a.json:
             Path(a.json).write_text(json.dumps(out, indent=1))

@@ -38,3 +38,23 @@ Nothing is traded; no account or key is used.
 **Verdict, per the registration: stop on these series.** The favourite contrast is not above +0.5¢ in both halves, and its lower bound is below 0.
 
 **Reading.** On Kalshi's hourly BTC/ETH markets, takers beat resting orders by about 1¢ gross: they react to the underlying's moves. The taker fee is also about 1¢, so both sides lose on average. The published maker edge (sports, longshots, data to 2025) does not appear here. It is consistent with M1's design: an edge in these markets, if any, is in *selective* taking against a better model, not in resting quotes.
+
+---
+
+# M2-pre-b: the same, on the series Kalshi pays liquidity incentives on (registered 2026-10-09 22:57 UTC, before any of these trades was pulled)
+
+**Why.** The published maker edge comes from retail-heavy categories, and Kalshi's liquidity incentive program (LIP) pays its pools there. The public `GET /incentive_programs` on 2026-10-09 listed 5,901 active programs. The largest daily pools are Rotten Tomatoes scores, NFL player-prop ladders, AAA state gas prices, Trump approval, rain and YouTube views. If makers there don't lose much on fills, the LIP reward can make quoting pay. Rewards can't be measured from history (they need order-book snapshots), so this study measures only the **fill side**.
+
+**The series** (all `fee_type` quadratic: no maker fee):
+- KXRT;
+- KXNFLLADDERREC, KXNFLLADDERRECYDS, KXNFLFFPTSLADDER;
+- KXAAAGASDOH, KXAAAGASDCO, KXAAAGASDIN, KXAAAGASDMI, KXAAAGASDNC, KXAAAGASDSC, KXAAAGASDTN;
+- KXTRUMPAPPROVE, KXRAIN, KXYTVIEWSW.
+
+**The events.** Every settled event of these series. Only trades created on or after 2026-08-10 (the public tape's start) count. Each event is dated by its last market's close. The halves split at 2026-09-10.
+
+**The contrasts:** maker value per contract as in M2-pre (makers pay no fee). By the maker's price buckets, by category (entertainment, NFL props, gas, politics, weather, YouTube), the favourite contrast (≥ 70¢), and all makers. Same intervals.
+
+**Reading it** (the rule differs from M2-pre because LIP rewards would come on top):
+- **Proceed to a forward LIP simulation** (order-book share, fills, markouts) if the all-maker 90% interval's **upper** bound is above −0.5¢ per contract, i.e. makers can't be shown to lose half a cent or more. Its favourite and category results pick where to look first.
+- **Stop** if the whole interval is below −0.5¢: rewards would then need to pay more than half a cent on every filled contract, which the median pool won't.
