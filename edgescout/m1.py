@@ -122,6 +122,7 @@ def implied_above(sm: list[Smile], strike: float, t: float, target: float) -> fl
 # ---------------------------------------------------------------- the recorded data
 def load(paths: list[Path]) -> dict:
     kal, opts, settled = defaultdict(list), defaultdict(list), {}
+    pm, pm_settled = defaultdict(list), {}
     for p in sorted(paths):
         with p.open() as f:
             for line in f:
@@ -139,7 +140,13 @@ def load(paths: list[Path]) -> dict:
                 elif k == "kalshi_settled":
                     for e in r["rows"]:
                         settled[e["event"]] = e
-    return {"kalshi": kal, "options": opts, "settled": settled}
+                elif k == "polymarket":
+                    for x in r["rows"]:
+                        pm[x["market"]].append((r["t"], x))
+                elif k == "polymarket_settled":
+                    for e in r["rows"]:
+                        pm_settled[e["event"]] = e
+    return {"kalshi": kal, "options": opts, "settled": settled, "polymarket": pm, "polymarket_settled": pm_settled}
 
 
 def _outcomes(settled: dict) -> dict:
@@ -244,12 +251,114 @@ def evaluate(ss: list[dict]) -> dict:
                                                       "value_per_contract": _boot(g)}}
 
 
-def window(d: dict, holdout: bool, now: float | None = None) -> tuple[float, float]:
+# ---------------------------------------------------------------- M1b: Kalshi vs Polymarket on the same event
+KALSHI_SERIES = {"BTC": "KXBTCD", "ETH": "KXETHD"}
+THETA_BOX = 0.01
+
+
+def polymarket_fee(p: float, rate: float, exponent: float = 1.0) -> float:
+    """Polymarket's taker fee per share: rate * (p (1 - p)) ** exponent (its crypto schedule: 0.07, exponent 1)."""
+    return rate * (p * (1 - p)) ** (exponent or 1.0)
+
+
+def _last_at(quotes: list, at: float, max_age: float = 120) -> dict | None:
+    times = [t for t, _ in quotes]
+    i = bisect.bisect_right(times, at) - 1
+    return quotes[i][1] if i >= 0 and at - times[i] <= max_age else None
+
+
+def cross_samples(d: dict, start: float, end: float) -> list[dict]:
+    """Each Polymarket 'above S' market and the Kalshi 'above' market of the same coin closing at the same moment
+    with floor S - 0.01 (Kalshi: >= S; Polymarket: > S), at each registered lead: both venues' last quotes within
+    2 minutes before it, and both outcomes (each venue settles on its own index)."""
+    k_out = _outcomes(d["settled"])
+    p_out = {}
+    for ev, e in d["polymarket_settled"].items():
+        for lo, hi, res in e.get("markets") or []:
+            p_out[(ev, lo, hi)] = 1 if res == "yes" else 0
+    kal_by: dict = defaultdict(list)                      # (series, close) -> [(floor, ticker)]
+    for ticker, q in d["kalshi"].items():
+        x = q[-1][1]
+        if x.get("strike_type") == "greater":
+            kal_by[(x.get("series"), x.get("close"))].append((x.get("floor"), ticker))
+    out = []
+    for mkt, pq in d["polymarket"].items():
+        p = pq[-1][1]
+        if p.get("kind") != "above" or p.get("low") is None or not start <= (p.get("close") or 0) < end:
+            continue
+        series = KALSHI_SERIES.get(p["currency"])
+        match = [t for f, t in kal_by.get((series, p["close"]), []) if f is not None and abs(f - (p["low"] - 0.01)) < 0.02]
+        if not match:
+            continue
+        kq = d["kalshi"][match[0]]
+        kx = kq[-1][1]
+        yk = k_out.get((kx["event"], "greater", kx.get("floor"), kx.get("cap")))
+        yp = p_out.get((p["event"], p["low"], p.get("high")))
+        if yk is None or yp is None:
+            continue
+        for lead in LEADS:
+            at = p["close"] - lead
+            a, b = _last_at(kq, at), _last_at(pq, at)
+            if a is None or b is None or a.get("yes_ask") is None or b.get("yes_ask") is None:
+                continue
+            out.append({"event": p["event"], "kalshi": match[0], "polymarket": mkt, "lead_s": lead, "t": at,
+                        "strike": p["low"], "k_bid": a.get("yes_bid") or 0.0, "k_ask": a["yes_ask"],
+                        "k_bid_size": a.get("yes_bid_size") or 0.0, "k_ask_size": a.get("yes_ask_size") or 0.0,
+                        "p_bid": b.get("yes_bid") or 0.0, "p_ask": b["yes_ask"], "p_fee_rate": b.get("fee_rate") or 0.0,
+                        "p_fee_exponent": b.get("fee_exponent") or 1.0, "k_outcome": yk, "p_outcome": yp})
+    return out
+
+
+def boxes(s: dict, theta: float = THETA_BOX) -> list[dict]:
+    """The two cross-venue boxes on one sample - YES on one venue and NO on the other, each at its ask with its
+    taker fee - kept when their cost is at most 1 - theta. Their value is the payoff (1 unless the two indexes
+    disagree around the strike) less the cost."""
+    out = []
+    pf = lambda x: polymarket_fee(x, s["p_fee_rate"], s["p_fee_exponent"])    # noqa: E731
+    if s["p_bid"] > 0:                                    # A: Kalshi YES + Polymarket NO (1 - its YES bid)
+        cost = s["k_ask"] + kalshi_fee(s["k_ask"]) + (1 - s["p_bid"]) + pf(1 - s["p_bid"])
+        if cost <= 1 - theta and s["k_ask_size"] >= MIN_SIZE:
+            out.append({"box": "kalshi_yes", "cost": cost, "value": s["k_outcome"] + (1 - s["p_outcome"]) - cost})
+    if s["k_bid"] > 0:                                    # B: Polymarket YES + Kalshi NO (1 - its YES bid)
+        cost = s["p_ask"] + pf(s["p_ask"]) + (1 - s["k_bid"]) + kalshi_fee(1 - s["k_bid"])
+        if cost <= 1 - theta and s["k_bid_size"] >= MIN_SIZE:
+            out.append({"box": "polymarket_yes", "cost": cost, "value": s["p_outcome"] + (1 - s["k_outcome"]) - cost})
+    return out
+
+
+def evaluate_cross(ss: list[dict]) -> dict:
+    """Boxes (research: they need both venues), and the directional rule traded on KALSHI ALONE with Polymarket's
+    mid as the predictor (what a US resident could do), event-clustered."""
+    g_box: dict = defaultdict(list)
+    kinds: dict = defaultdict(int)
+    g_dir: dict = defaultdict(list)
+    sides: dict = defaultdict(int)
+    gap: dict = defaultdict(list)
+    for s in ss:
+        for b in boxes(s):
+            g_box[s["event"]].append(b["value"])
+            kinds[b["box"]] += 1
+        mid = (s["p_bid"] + s["p_ask"]) / 2
+        gap[s["event"]].append(mid - (s["k_bid"] + s["k_ask"]) / 2)
+        tr = trade({"p_imp": mid, "yes_ask": s["k_ask"], "yes_bid": s["k_bid"], "yes_ask_size": s["k_ask_size"],
+                    "yes_bid_size": s["k_bid_size"], "outcome": s["k_outcome"]})
+        if tr:
+            g_dir[s["event"]].append(tr["value"])
+            sides[tr["side"]] += 1
+    return {"samples": len(ss), "pairs": len({(s["kalshi"], s["polymarket"]) for s in ss}),
+            "outcomes_disagree": len({(s["kalshi"], s["polymarket"]) for s in ss if s["k_outcome"] != s["p_outcome"]}),
+            "polymarket_minus_kalshi_mid": _boot(gap),
+            "boxes": {"count": sum(kinds.values()), "kinds": dict(kinds), "value_per_box": _boot(g_box)},
+            "kalshi_rule_on_polymarket_mid": {"trades": sum(sides.values()), "sides": dict(sides),
+                                              "value_per_contract": _boot(g_dir)}}
+
+
+def window(d: dict, holdout: bool, now: float | None = None, source: str = "kalshi") -> tuple[float, float]:
     """The registered windows: development = from the first recorded Kalshi quote to the end of the 7th full UTC day
     after it; holdout = the 14 days after that."""
-    first = min((q[0][0] for q in d["kalshi"].values() if q), default=None)
+    first = min((q[0][0] for q in d[source].values() if q), default=None)
     if first is None:
-        raise ValueError("no Kalshi data recorded yet")
+        raise ValueError(f"no {source} data recorded yet")
     day0 = (first // 86400 + 1) * 86400
     dev_end = day0 + DEV_DAYS * 86400
     if not holdout:
@@ -260,10 +369,11 @@ def window(d: dict, holdout: bool, now: float | None = None) -> tuple[float, flo
     return dev_end, end
 
 
-def run(data: Path, holdout: bool = False) -> dict:
+def run(data: Path, holdout: bool = False, cross: bool = False) -> dict:
     d = load(sorted(data.glob("scan-*.jsonl")))
-    start, end = window(d, holdout)
-    ss = samples(d, start, end)
-    return {"window": "holdout" if holdout else "development",
+    start, end = window(d, holdout, source="polymarket" if cross else "kalshi")
+    res = evaluate_cross(cross_samples(d, start, end)) if cross else evaluate(samples(d, start, end))
+    return {"study": "M1b Kalshi vs Polymarket" if cross else "M1 Kalshi vs options",
+            "window": "holdout" if holdout else "development",
             "from": time.strftime("%Y-%m-%d %H:%M", time.gmtime(start)),
-            "to": time.strftime("%Y-%m-%d %H:%M", time.gmtime(end)), **evaluate(ss)}
+            "to": time.strftime("%Y-%m-%d %H:%M", time.gmtime(end)), **res}

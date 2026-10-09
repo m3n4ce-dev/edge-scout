@@ -54,3 +54,33 @@ The unit of evidence is the **event** (one close time of one series). Strikes wi
 - **Inconclusive** otherwise. Report it as such; don't extend it, don't re-tune.
 
 **Not part of this:** any order, any account, any key. A live pilot (M3) needs the owner's explicit OK, sized by the owner.
+
+---
+
+# M1b: Kalshi vs Polymarket on the same event (registered 2026-10-09 02:00 UTC, before any Polymarket data)
+
+**The question.** Polymarket's daily BTC/ETH markets resolve at 12:00 ET, on Binance's BTC/USDT (ETH/USDT) 1-minute candle close. Kalshi's hourly "above" event for 12:00 ET resolves at the same moment, on CF Benchmarks' 60-second average. Do the two venues price the same event differently by more than fees?
+
+**Access.** International Polymarket's markets are flagged `restricted`: its terms bar US persons. For the owner (US), Polymarket is a **price signal** here, not a venue, unless the owner confirms access through Polymarket's US exchange. The tradable leg is Kalshi.
+
+**What's recorded** (`edgescout/polymarket.py`, every 60 s, public data):
+- the "above" and range markets for BTC/ETH closing within 36 h, with a mid between 2¢ and 98¢: YES best bid/ask, spread, liquidity, 24-hour volume, the fee schedule (0.07 × p × (1 − p), taker only);
+- each settled event once, with every market's result.
+
+**The pairing.** A Polymarket "above S" market matches the Kalshi "above" market of the same coin closing at the same moment with floor S − 0.01. Kalshi's YES is ≥ S, Polymarket's is > S, so the two differ only by a tie at S. Both are sampled at the M1 leads (in practice the last hour: 45, 30, 15 and 5 minutes, since Kalshi's hourly events open an hour ahead). Each lead uses each venue's last quote within the 2 minutes before it. Both outcomes are kept: each venue settles on its own index.
+
+**The estimands** (event-clustered, as in M1):
+1. **The rule on Kalshi alone:** the M1 rule, with Polymarket's mid in place of the options-implied probability (θ = 3¢, Kalshi's taker fee, at least 10 contracts shown). This is the version a US resident could trade.
+2. **Boxes (research only:** they need both venues). YES on one venue plus NO on the other, each at its ask with its taker fee, kept when the cost is at most 99¢. Its value is the payoff, which is 1 unless the two indexes land on opposite sides of S, minus the cost. Count them, and value them per box.
+3. **Basis:** how often matched markets settle differently, and the mean Polymarket-minus-Kalshi mid.
+
+**Windows and verdict** (as M1, from the first recorded Polymarket row):
+- **Development:** to the end of the 7th full UTC day.
+- **Holdout:** the 14 days after, refused until complete.
+- **The decision is on estimand 1.** Kill if its holdout mean value per contract ≤ 0, or its 90% interval includes 0 with a point estimate under 1¢. Proceed only if the interval is above 0 with at least 100 events traded. Otherwise inconclusive.
+- **Boxes are reported, never a verdict,** while Polymarket isn't accessible to the owner.
+
+**Approximations, kept and reported:**
+- Kalshi's fee is rounded up per contract here (it's rounded per order in fact): conservative.
+- Polymarket's fee isn't rounded.
+- Quoted sizes on Polymarket aren't recorded (only its liquidity), so boxes assume the shown Kalshi size only.

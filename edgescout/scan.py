@@ -8,7 +8,7 @@ import json
 import time
 from pathlib import Path
 
-from . import kalshi, venues
+from . import kalshi, polymarket, venues
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -51,10 +51,16 @@ async def scan(minutes: float, spot_every: float = 10, deriv_every: float = 60, 
                 _write("kalshi", k, kerr)
                 o, oerr = await kalshi.deribit_options(c, t0)
                 _write("deribit_options", o, oerr)
+                p, perr = await polymarket.polymarket_open(c, t0)          # M1b: the same events on Polymarket
+                _write("polymarket", p, perr)
                 if t0 - last_settled >= settled_every:
                     st, serr = await kalshi.kalshi_settled(c, last_settled - kalshi.SETTLED_LOOKBACK_S)
                     new = [r for r in st if r["event"] not in settled_seen]
                     settled_seen.update(r["event"] for r in new)
                     _write("kalshi_settled", new, serr)
+                    ps, pserr = await polymarket.polymarket_settled(c, last_settled - kalshi.SETTLED_LOOKBACK_S, t0)
+                    pnew = [r for r in ps if ("pm", r["event"]) not in settled_seen]
+                    settled_seen.update(("pm", r["event"]) for r in pnew)
+                    _write("polymarket_settled", pnew, pserr)
                     last_settled = t0
             await asyncio.sleep(max(0.0, spot_every - (time.time() - t0)))
