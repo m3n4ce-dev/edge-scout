@@ -167,6 +167,62 @@ def report_lip() -> dict:
     return out
 
 
+# ---------------------------------------------------------------- M2-fwd (registered 2026-10-09 23:55 UTC)
+FWD_FROM, FWD_TO = "2026-10-10T00:00:00Z", "2026-11-07T00:00:00Z"
+FWD_DATA = DATA.parent / "maker_history_fwd"
+FWD_MIN_EVENTS = 40
+
+
+def pull_fwd() -> None:
+    """The LIP series' events settled in the forward window, trades from its start only."""
+    FWD_DATA.mkdir(parents=True, exist_ok=True)
+    with httpx.Client(timeout=20) as c:
+        for ev, s in lip_events(c):
+            p = FWD_DATA / f"{ev}.json.gz"
+            if p.exists():
+                continue
+            try:
+                e = pull_event(c, ev)
+            except Exception as ex:                      # noqa: BLE001 - logged; the next run retries it
+                print(f"{ev}: {type(ex).__name__}: {str(ex)[:120]}", flush=True)
+                continue
+            last = max((m["close"] for m in e["markets"] if m.get("close")), default="")
+            if not FWD_FROM <= last < FWD_TO:
+                continue                                 # outside the window: not kept
+            e["series"] = s
+            for m in e["markets"]:
+                m["trades"] = [t for t in m["trades"] if t[0] >= FWD_FROM]
+            p.write_bytes(gzip.compress(json.dumps(e).encode()))
+            print(f"{ev}: {len(e['markets'])} markets, {sum(len(m['trades']) for m in e['markets'])} trades", flush=True)
+
+
+def _boot95(per_event: dict) -> dict:
+    ev = [sum(v * n for v, n in xs) / sum(n for _, n in xs) for xs in per_event.values() if xs]
+    if not ev:
+        return {"events": 0, "mean_cents": None, "lo95": None, "hi95": None}
+    rng = random.Random(SEED)
+    ms = sorted(sum(rng.choice(ev) for _ in ev) / len(ev) for _ in range(BOOT))
+    return {"events": len(ev), "mean_cents": round(100 * sum(ev) / len(ev), 3),
+            "lo95": round(100 * ms[int(0.025 * BOOT)], 3), "hi95": round(100 * ms[int(0.975 * BOOT) - 1], 3)}
+
+
+def report_fwd(now: float | None = None) -> dict:
+    if (time.time() if now is None else now) < _ts(FWD_TO) + 86400:
+        raise ValueError("the forward window isn't complete until a day after 2026-11-07")
+    h1, h2 = {}, {}
+    for p in sorted(FWD_DATA.glob("*.json.gz")):
+        e = json.loads(gzip.decompress(p.read_bytes()))
+        rows = maker_rows(e)
+        h1[e["event"]] = [(r["value"], r["n"]) for r in rows if 0.70 <= r["price"] < 0.90]
+        if e.get("series") == "KXRAIN":
+            h2[e["event"]] = [(r["value"], r["n"]) for r in rows]
+    out = {"H1_favourites_70_90": _boot95(h1), "H2_rain_all_makers": _boot95(h2)}
+    for k, v in out.items():
+        v["verdict"] = ("inconclusive (too few events)" if v["events"] < FWD_MIN_EVENTS else
+                        "pass" if (v["lo95"] or 0) > 0 else "fail")
+    return out
+
+
 def taker_fee(p: float, n: float) -> float:
     """Per contract, Kalshi's quadratic taker fee rounded up per trade of n contracts."""
     return math.ceil(round(0.07 * n * p * (1 - p) * 100, 9)) / 100 / n if n > 0 else 0.0
@@ -238,15 +294,15 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="edgescout.maker_history")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pl = sub.add_parser("pull")
-    pl.add_argument("--study", choices=["crypto", "lip"], default="crypto")
+    pl.add_argument("--study", choices=["crypto", "lip", "fwd"], default="crypto")
     r = sub.add_parser("report")
-    r.add_argument("--study", choices=["crypto", "lip"], default="crypto")
+    r.add_argument("--study", choices=["crypto", "lip", "fwd"], default="crypto")
     r.add_argument("--json")
     a = ap.parse_args()
     if a.cmd == "pull":
-        pull_lip() if a.study == "lip" else pull()
+        {"lip": pull_lip, "fwd": pull_fwd}.get(a.study, pull)()
     else:
-        out = report_lip() if a.study == "lip" else report()
+        out = {"lip": report_lip, "fwd": report_fwd}.get(a.study, report)()
         print(json.dumps(out, indent=1))
         if a.json:
             Path(a.json).write_text(json.dumps(out, indent=1))

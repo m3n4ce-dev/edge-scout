@@ -59,7 +59,7 @@ Nothing is traded; no account or key is used.
 - **Proceed to a forward LIP simulation** (order-book share, fills, markouts) if the all-maker 90% interval's **upper** bound is above −0.5¢ per contract, i.e. makers can't be shown to lose half a cent or more. Its favourite and category results pick where to look first.
 - **Stop** if the whole interval is below −0.5¢: rewards would then need to pay more than half a cent on every filled contract, which the median pool won't.
 
-## M2-pre-b result (2026-10-10 00:0x UTC)
+## M2-pre-b result (2026-10-09 23:51 UTC)
 
 **Coverage.** 603 of 605 settled events were pulled. Two (KXAAAGASDNC-26SEP12 and -26SEP15) failed on HTTP 500 from Kalshi, and they're excluded. 418 events had trades in the public tape's period, about 80M contracts.
 
@@ -81,3 +81,17 @@ Nothing is traded; no account or key is used.
 - YouTube: −0.96; +2.81 (+0.28, +4.98).
 
 **Exploratory, not decisions.** Two cells stand out: makers buying at 70–90¢ (the favourite side of the favourite-longshot bias) and rain markets. They were found by looking at many cells of the same history, so they are hypotheses. Any test of them must be registered first and judged on data recorded after registration.
+
+---
+
+# M2-fwd: the two exploratory cells, forward only (registered 2026-10-09 23:55 UTC)
+
+The two hypotheses come from M2-pre-b's history. They are judged **only** on events that settle after this registration, never on the history they came from.
+- **H1:** on the LIP series (M2-pre-b's list), makers buying at **70–90¢** earn more than 0 per contract.
+- **H2:** on **KXRAIN**, all makers earn more than 0 per contract.
+
+**The data.** Same method as M2-pre-b: public trade tape, maker = the taker's counterparty, no maker fee. Only events whose last market closes on or after **2026-10-10 00:00 UTC** count, and only trades created on or after that time. The window runs until **2026-11-07 00:00 UTC** (four weeks). Pull with `python -m edgescout.maker_history pull --study fwd` after it ends.
+
+**The verdict.** Two hypotheses, so each needs its event-clustered **95%** interval (2,000 resamples, seed 20261009) entirely above 0. Each is judged alone. Each also needs at least 40 events with qualifying trades, or it's inconclusive.
+
+**What a pass means, and doesn't.** A pass shows the average filled resting order earned money on these cells. It does not show our orders would: queue position and adverse selection decide that. A pass leads to a queue-aware forward simulation from order-book snapshots (with LIP reward share), registered in turn. Nothing is traded.
