@@ -33,3 +33,16 @@
 - **Proceed** (to a live pilot proposal for the owner) only if net is ≥ 4%/yr on notional, the coin-days are positive on at least 75% of days, **and** the owner has confirmed Coinbase's real fee.
 
 **What this can't be.** It's cash-plus, not alpha: at $5,000 it's roughly $200–400 a year above cash, if it holds. Bitnomial's books are small, about $0.7M BTC open interest, which caps the size.
+
+## Note (2026-10-11 08:18 UTC, day 2 of the window): the registered kill rule tests a 14-day hold
+
+**The verdict is unchanged.** The rule above stays as registered and is applied at the window's end.
+
+The rule charges the 25 bp round trip once, inside the 14-day window, and then annualizes the window's net. A round trip spread over 14 days costs 0.25% × 365 / 14 ≈ **6.5%/yr**, and Bitnomial's floor pays 10.95%/yr. So the rule passes only if Coinbase's funding stays below about 0.5%/yr for the whole window: the rule tests a two-week trade. The position this study is about would be held for months, and "$200–400 a year above cash" above assumed that. This is arithmetic, independent of the data, but it was noticed on the first interim read (day 2), so it's disclosed rather than changed.
+
+**What's added, reported and not decided on** (`m3.held`, in `reported_not_decided`):
+- the window's gross funding gap per year (received minus paid);
+- the same with the round trip spread over a one-year hold (−0.25%/yr at 25 bp, −0.40%/yr at 40 bp);
+- the variant hedged with spot instead of the Coinbase perp: Bitnomial's funding is received and nothing is paid on the long leg, which ties up the full notional in cash.
+
+**Edge effect.** A short held at a funding timestamp receives that whole interval's payment. The window started 19 minutes before one, so early reads overstate the received leg; for example, 5 intervals in the first 32.6 hours where 4.1 would be expected. That fades over 14 days.
