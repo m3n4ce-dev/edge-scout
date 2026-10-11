@@ -80,6 +80,8 @@ Nothing is traded; no account or key is used.
 - politics: +0.56; +0.11;
 - YouTube: −0.96; +2.81 (+0.28, +4.98).
 
+**Correction to the stop rule's premise (2026-10-11).** The rule assumed the median pool pays under half a cent per filled contract. That was never checked, and it's wrong. Kalshi's public program history (`GET /incentive_programs`, `period_reward` in centi-cents) puts these series' pools over 08-10..10-08 at about $1.63M, against 80.4M traded contracts: about 2.0¢ per contract, from 0.3¢ (rain) to 6.4¢ (gas). That's an upper bound on what was paid (a snapshot without the target size on both sides pays nothing). The verdict above stands as registered, because it was a rule. The open question, what a new quoter's share and fills would be, moves to M4 (docs/M4_LIP.md), which measures it forward.
+
 **Exploratory, not decisions.** Two cells stand out: makers buying at 70–90¢ (the favourite side of the favourite-longshot bias) and rain markets. They were found by looking at many cells of the same history, so they are hypotheses. Any test of them must be registered first and judged on data recorded after registration.
 
 ---
