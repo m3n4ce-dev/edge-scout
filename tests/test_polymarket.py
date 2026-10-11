@@ -363,6 +363,75 @@ def test_cross_samples_no_pair_different_strike():
     assert len(samples) == 0
 
 
+# Test 10b: the pairing is by the same MOMENT, robustly, and a pair needs both venues' quotes at the lead
+def _cross_fixture(k_close, p_close, k_quote_times, p_quote_times, floor=79999.99, strike=80000.0):
+    """One Kalshi 'above' market and one Polymarket 'above' market, each with a quote at the given times."""
+    def k(t):
+        return (t, {"series": "KXBTCD", "ticker": "KX-T80000", "event": "kev", "strike_type": "greater",
+                    "floor": floor, "cap": None, "close": k_close, "yes_bid": 0.45, "yes_ask": 0.48,
+                    "yes_bid_size": 50, "yes_ask_size": 50})
+
+    def p(t):
+        return (t, {"kind": "above", "currency": "BTC", "event": "pev", "market": "pm80", "low": strike, "high": None,
+                    "close": p_close, "yes_bid": 0.46, "yes_ask": 0.49, "fee_rate": 0.07, "fee_exponent": 1})
+    return {"kalshi": {"KX-T80000": [k(t) for t in k_quote_times]},
+            "polymarket": {"pm80": [p(t) for t in p_quote_times]},
+            "settled": {"kev": {"event": "kev", "markets": [["greater", floor, None, "yes"]]}},
+            "polymarket_settled": {"pev": {"event": "pev", "markets": [[strike, None, "yes"]]}}}
+
+
+CLOSE = 1791561600.0                                               # 2026-10-09 16:00:00 UTC = 12:00 ET
+HOUR = [CLOSE - 3600 + 60 * i for i in range(60)]                    # a quote every minute through the last hour
+
+
+def test_cross_samples_pair_a_market_at_every_lead_when_both_venues_quote_through_the_hour():
+    ss = m1.cross_samples(_cross_fixture(CLOSE, CLOSE, HOUR, HOUR), CLOSE - 86400, CLOSE + 86400)
+    assert sorted(s["lead_s"] for s in ss) == [300, 900, 1800, 2700, 3600]     # 6 h and 3 h: Kalshi has no quote yet
+    assert {s["kalshi"] for s in ss} == {"KX-T80000"} and {s["polymarket"] for s in ss} == {"pm80"}
+
+
+@pytest.mark.parametrize("offset", [1, 3, 30, -45, 60])
+def test_cross_samples_pair_closes_the_venues_state_a_few_seconds_apart(offset):
+    """The same moment stated differently (16:00:00 on one venue, 16:00:03 on the other) is the same event: the match
+    must not depend on the two timestamps being bit-identical."""
+    ss = m1.cross_samples(_cross_fixture(CLOSE + offset, CLOSE, HOUR, HOUR), CLOSE - 86400, CLOSE + 86400)
+    assert len(ss) == 5 and all(s["t"] == CLOSE - s["lead_s"] for s in ss)     # sampled at the Polymarket close's leads
+
+
+@pytest.mark.parametrize("offset", [61, 300, 3600])
+def test_cross_samples_do_not_pair_different_closes(offset):
+    """Kalshi's neighbouring hourly event (an hour later) or minutes off is a different event, not the same moment."""
+    d = _cross_fixture(CLOSE + offset, CLOSE, HOUR, HOUR)
+    assert m1.cross_samples(d, CLOSE - 86400, CLOSE + 86400) == []
+
+
+def test_cross_samples_need_the_floor_one_cent_below_the_polymarket_strike():
+    for floor in (79899.99, 80099.99, 80000.99):
+        assert m1.cross_samples(_cross_fixture(CLOSE, CLOSE, HOUR, HOUR, floor=floor), CLOSE - 86400, CLOSE + 86400) == []
+    assert len(m1.cross_samples(_cross_fixture(CLOSE, CLOSE, HOUR, HOUR, floor=79999.99), CLOSE - 86400, CLOSE + 86400)) == 5
+
+
+def test_cross_samples_lose_the_leads_where_either_venue_has_no_quote_in_the_two_minutes_before():
+    """Each venue records a market only while its mid is within 2-98 cents, so a market whose price runs away stops
+    being quoted: Polymarket's last quote 25 minutes before the close leaves the 45- and 30-minute leads only."""
+    pm_quotes = [t for t in HOUR if t <= CLOSE - 25 * 60]
+    ss = m1.cross_samples(_cross_fixture(CLOSE, CLOSE, HOUR, pm_quotes), CLOSE - 86400, CLOSE + 86400)
+    assert sorted(s["lead_s"] for s in ss) == [1800, 2700, 3600]
+    k_quotes = [t for t in HOUR if t >= CLOSE - 20 * 60]                  # Kalshi quotes only the last 20 minutes
+    ss = m1.cross_samples(_cross_fixture(CLOSE, CLOSE, k_quotes, HOUR), CLOSE - 86400, CLOSE + 86400)
+    assert sorted(s["lead_s"] for s in ss) == [300, 900]
+
+
+def test_kalshi_counterpart_takes_the_nearest_close_then_the_nearest_floor():
+    kal_by = {"KXBTCD": [(CLOSE + 40, 79999.99, "far"), (CLOSE + 2, 79999.99, "near"), (CLOSE + 2, 79999.97, "off"),
+                         (CLOSE + 3600, 79999.99, "next hour"), (None, 79999.99, "no close"), (CLOSE, None, "no floor")],
+              "KXETHD": [(CLOSE, 79999.99, "other coin")]}
+    assert m1.kalshi_counterpart(kal_by, "KXBTCD", CLOSE, 80000.0) == "near"
+    assert m1.kalshi_counterpart(kal_by, "KXBTCD", CLOSE + 7200, 80000.0) is None
+    assert m1.kalshi_counterpart(kal_by, "KXBTCD", CLOSE, 81000.0) is None
+    assert m1.kalshi_counterpart(kal_by, None, CLOSE, 80000.0) is None
+
+
 # Test 11: m1.evaluate_cross generates statistics
 def test_evaluate_cross():
     close = 1791547200.0
