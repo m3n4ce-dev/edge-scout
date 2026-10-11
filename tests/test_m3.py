@@ -28,3 +28,16 @@ def test_bitnomial_intervals_outside_the_window_dont_count():
     bn = {c: {T0 - 1: 0.0001, T0 + 8 * 3600: 0.0001, T0 + 2 * 86400: 0.0001} for c in m3.COINS}
     out = m3.paper({}, bn, T0, T0 + 86400, cost_bp=0)
     assert out["SOL"]["bitnomial_received"] == pytest.approx(0.1)
+
+
+def test_held_spreads_the_round_trip_over_a_year_and_reports_the_spot_hedge():
+    bn = {c: {T0 + 8 * 3600 * k: 0.0001 for k in range(1, 4)} for c in m3.COINS}          # 10.95%/yr
+    cde = {c: [(T0 + 60, 0.0000040)] for c in m3.COINS}                                   # 24 x 0.0004% a day
+    out = m3.held(cde, bn, T0, T0 + 86400)
+    yr = m3.YEAR / 86400
+    gap = 100 * (0.3 - 0.096) / 1000 * yr
+    assert out["BTC"]["gross_gap_pct_per_year"] == pytest.approx(gap, abs=1e-3)
+    assert out["BTC"]["held_one_year_net_pct"]["25bp"] == pytest.approx(gap - 0.25, abs=1e-3)
+    assert out["BTC"]["held_one_year_net_pct"]["40bp"] == pytest.approx(gap - 0.40, abs=1e-3)
+    assert out["BTC"]["spot_hedge_received_pct_per_year"] == pytest.approx(100 * 0.3 / 1000 * yr, abs=1e-3)
+    assert out["portfolio_held_one_year_net_pct_at_25bp"] == pytest.approx(gap - 0.25, abs=1e-3)

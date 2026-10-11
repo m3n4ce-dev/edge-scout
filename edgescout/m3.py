@@ -70,6 +70,25 @@ def paper(cde: dict, bn: dict, start: float, end: float, cost_bp: float = COST_B
     return out
 
 
+def held(cde: dict, bn: dict, start: float, end: float) -> dict:
+    """Reported, not decided on (docs/M3_BITNOMIAL.md, note of 2026-10-11): the window's gross funding gap per year,
+    the same with each round trip's cost spread over a one-year hold instead of the 14-day window, and the variant
+    hedged with spot instead of the CDE perp (Bitnomial's funding received; no funding paid on the long leg, which
+    ties up the full notional in cash)."""
+    g, years = paper(cde, bn, start, end, cost_bp=0.0), max((end - start) / YEAR, 1e-12)
+    out = {}
+    for coin in COINS:
+        x = g[coin]
+        gap = 100 * (x["bitnomial_received"] - x["cde_paid"]) / NOTIONAL / years
+        out[coin] = {"gross_gap_pct_per_year": round(gap, 3),
+                     "held_one_year_net_pct": {f"{bp:g}bp": round(gap - bp / 100, 3) for bp in (COST_BP, COST_BP_SENSITIVITY)},
+                     "spot_hedge_received_pct_per_year": round(100 * x["bitnomial_received"] / NOTIONAL / years, 3)}
+    n = len(COINS)
+    out["portfolio_gross_gap_pct_per_year"] = round(sum(out[c]["gross_gap_pct_per_year"] for c in COINS) / n, 3)
+    out["portfolio_held_one_year_net_pct_at_25bp"] = round(out["portfolio_gross_gap_pct_per_year"] - COST_BP / 100, 3)
+    return out
+
+
 def run(data: Path, now: float | None = None) -> dict:
     cde, bn = load(sorted(data.glob("scan-*.jsonl")))
     first_bn = None
@@ -90,4 +109,5 @@ def run(data: Path, now: float | None = None) -> dict:
     return {"window_from": time.strftime("%Y-%m-%d %H:%M", time.gmtime(first_bn)),
             "window_to": time.strftime("%Y-%m-%d %H:%M", time.gmtime(end)), "complete": end >= first_bn + WINDOW_DAYS * 86400,
             "bitnomial_off_floor": f"{off}/{n}", "at_25bp": paper(cde, bn, first_bn, end),
-            "at_40bp": paper(cde, bn, first_bn, end, COST_BP_SENSITIVITY)}
+            "at_40bp": paper(cde, bn, first_bn, end, COST_BP_SENSITIVITY),
+            "reported_not_decided": held(cde, bn, first_bn, end)}
