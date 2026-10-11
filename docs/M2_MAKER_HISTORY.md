@@ -84,7 +84,7 @@ Nothing is traded; no account or key is used.
 
 ---
 
-# M2-fwd: the two exploratory cells, forward only (registered 2026-10-09 23:55 UTC)
+# M2-fwd: the two exploratory cells, forward only (registered 2026-10-09 23:51 UTC)
 
 The two hypotheses come from M2-pre-b's history. They are judged **only** on events that settle after this registration, never on the history they came from.
 - **H1:** on the LIP series (M2-pre-b's list), makers buying at **70–90¢** earn more than 0 per contract.
