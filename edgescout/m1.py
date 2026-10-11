@@ -6,7 +6,11 @@
 Pieces, each tested on synthetic data (tests/test_m1.py):
 - `implied_above`: the options-implied probability that the price is above K at a time T, from Deribit's recorded
   smiles - IV against log-moneyness per expiry, total variance and the forward interpolated in time between the two
-  expiries bracketing T, and the digital as -dC/dK by a central difference on Black-76 prices (r = 0);
+  expiries bracketing T, and the digital as -dC/dK by a central difference on Black-76 prices (r = 0). The step of
+  that difference scales with the width of the price distribution at the strike, h = K min(0.5%, max(0.001%,
+  5% of sqrt(w))) for total variance w (see the 2026-10-11 development note in docs/M1_KALSHI.md: the first version
+  used a fixed +-0.5% of K, which at the 5-minute lead is about 3 standard deviations and averaged the
+  digital toward 1/2);
 - `kalshi_fee`: the taker fee per contract, ceil(0.07 p (1 - p) * 100) / 100;
 - `samples`: each "above K" market at the registered lead times before its close (the last quote at or before),
   joined with its event's outcome and the implied probability from the last options snapshot at or before;
@@ -107,11 +111,20 @@ def _w_f(sm: list[Smile], strike: float, t: float, target: float) -> tuple[float
     return s.vol(strike) ** 2 * tau, s.forward
 
 
+STEP_MAX, STEP_MIN, STEP_SD = 0.005, 1e-5, 0.05          # the digital's step, as fractions of K and of sqrt(w)
+
+
 def implied_above(sm: list[Smile], strike: float, t: float, target: float) -> float | None:
-    """P(S_target > strike) implied by the smiles seen at t: -dC/dK by a central difference (+-0.5% of K)."""
+    """P(S_target > strike) implied by the smiles seen at t: the digital -dC/dK, by a central difference on the
+    Black-76 prices. The estimand is the derivative, so the step must be small against the width of the price
+    distribution at the strike: h = K * min(0.5%, max(0.001%, 5% of sqrt(w0))), w0 the total variance at the strike
+    (sqrt(w0) is the standard deviation of ln S_target; 0.15% at the 5-minute lead of a 50%-vol coin, where the
+    fixed +-0.5% of K this replaced spanned ~3 sd each way and averaged the digital toward 1/2). Everything else - the
+    smile, the time interpolation, the clamp to [0, 1] - is as registered."""
     if not sm or target <= t:
         return None
-    h = 0.005 * strike
+    w0, _ = _w_f(sm, strike, t, target)
+    h = strike * min(STEP_MAX, max(STEP_MIN, STEP_SD * math.sqrt(w0)))
     w1, f1 = _w_f(sm, strike - h, t, target)
     w2, f2 = _w_f(sm, strike + h, t, target)
     f = (f1 + f2) / 2
@@ -223,12 +236,20 @@ def _boot(per_event: dict[str, list[float]], boots: int = BOOT, seed: int = SEED
             "hi90": round(means[int(0.95 * boots) - 1], 5)}
 
 
+def two_sided(s: dict) -> bool:
+    """A book with both a bid and an ask. Kalshi shows an empty side as a placeholder price with no size (an ask of
+    $1.00, a bid of $0.00): the 'mid' of a one-sided book is half a placeholder, not a price."""
+    ya, yb = s.get("yes_ask"), s.get("yes_bid") or 0.0
+    return (ya is not None and 0 < ya < 1 and (s.get("yes_ask_size") or 0) > 0
+            and 0 < yb < 1 and (s.get("yes_bid_size") or 0) > 0)
+
+
 def evaluate(ss: list[dict]) -> dict:
     cal = {}
     for lo, hi in BUCKETS:
         g: dict = defaultdict(list)
         for s in ss:
-            if s["yes_ask"] is None:
+            if not two_sided(s):
                 continue
             mid = (s["yes_bid"] + s["yes_ask"]) / 2
             if lo <= mid < hi:
@@ -244,9 +265,10 @@ def evaluate(ss: list[dict]) -> dict:
     have = sum(1 for s in ss if s["p_imp"] is not None)
     gap: dict = defaultdict(list)
     for s in ss:
-        if s["p_imp"] is not None and s["yes_ask"] is not None:
+        if s["p_imp"] is not None and two_sided(s):
             gap[s["event"]].append(s["p_imp"] - (s["yes_bid"] + s["yes_ask"]) / 2)
-    return {"samples": len(ss), "with_implied": have, "calibration_outcome_minus_mid": cal,
+    return {"samples": len(ss), "two_sided": sum(1 for s in ss if two_sided(s)), "with_implied": have,
+            "calibration_outcome_minus_mid": cal,
             "implied_minus_mid": _boot(gap), "rule": {"trades": sum(sides.values()), "sides": dict(sides),
                                                       "value_per_contract": _boot(g)}}
 
@@ -267,30 +289,49 @@ def _last_at(quotes: list, at: float, max_age: float = 120) -> dict | None:
     return quotes[i][1] if i >= 0 and at - times[i] <= max_age else None
 
 
+CLOSE_TOL_S = 60.0                  # two venues' closes within this are the same moment (Kalshi 16:00:00, Polymarket 16:00:00)
+FLOOR_TOL = 0.02                    # Kalshi's floor is S - 0.01 to the cent; a hair of float slack
+
+
+def kalshi_counterpart(kal_by: dict, series: str | None, close: float, strike: float) -> str | None:
+    """The ticker of the Kalshi 'above' market of `series` that closes at the same moment (within CLOSE_TOL_S) as a
+    Polymarket 'above `strike`' market and whose floor is strike - 0.01 (Kalshi's YES is >= strike, Polymarket's is
+    > strike). `kal_by`: series -> [(close, floor, ticker)]. The nearest close wins, then the nearest floor."""
+    best = None
+    for c, f, t in kal_by.get(series, []):
+        if c is None or f is None or abs(c - close) > CLOSE_TOL_S or abs(f - (strike - 0.01)) >= FLOOR_TOL:
+            continue
+        key = (abs(c - close), abs(f - (strike - 0.01)))
+        if best is None or key < best[0]:
+            best = (key, t)
+    return best[1] if best else None
+
+
 def cross_samples(d: dict, start: float, end: float) -> list[dict]:
     """Each Polymarket 'above S' market and the Kalshi 'above' market of the same coin closing at the same moment
-    with floor S - 0.01 (Kalshi: >= S; Polymarket: > S), at each registered lead: both venues' last quotes within
-    2 minutes before it, and both outcomes (each venue settles on its own index)."""
+    (the two venues' closes within CLOSE_TOL_S) with floor S - 0.01 (Kalshi: >= S; Polymarket: > S), at each
+    registered lead: both venues' last quotes within 2 minutes before it, and both outcomes (each venue settles on
+    its own index). A pair exists only where BOTH venues recorded a quote at the lead, and each records a market only
+    while its mid is within 2-98 cents - see docs/M1_KALSHI.md, development notes."""
     k_out = _outcomes(d["settled"])
     p_out = {}
     for ev, e in d["polymarket_settled"].items():
         for lo, hi, res in e.get("markets") or []:
             p_out[(ev, lo, hi)] = 1 if res == "yes" else 0
-    kal_by: dict = defaultdict(list)                      # (series, close) -> [(floor, ticker)]
+    kal_by: dict = defaultdict(list)                      # series -> [(close, floor, ticker)]
     for ticker, q in d["kalshi"].items():
         x = q[-1][1]
         if x.get("strike_type") == "greater":
-            kal_by[(x.get("series"), x.get("close"))].append((x.get("floor"), ticker))
+            kal_by[x.get("series")].append((x.get("close"), x.get("floor"), ticker))
     out = []
     for mkt, pq in d["polymarket"].items():
         p = pq[-1][1]
         if p.get("kind") != "above" or p.get("low") is None or not start <= (p.get("close") or 0) < end:
             continue
-        series = KALSHI_SERIES.get(p["currency"])
-        match = [t for f, t in kal_by.get((series, p["close"]), []) if f is not None and abs(f - (p["low"] - 0.01)) < 0.02]
-        if not match:
+        match = kalshi_counterpart(kal_by, KALSHI_SERIES.get(p["currency"]), p["close"], p["low"])
+        if match is None:
             continue
-        kq = d["kalshi"][match[0]]
+        kq = d["kalshi"][match]
         kx = kq[-1][1]
         yk = k_out.get((kx["event"], "greater", kx.get("floor"), kx.get("cap")))
         yp = p_out.get((p["event"], p["low"], p.get("high")))
@@ -301,7 +342,7 @@ def cross_samples(d: dict, start: float, end: float) -> list[dict]:
             a, b = _last_at(kq, at), _last_at(pq, at)
             if a is None or b is None or a.get("yes_ask") is None or b.get("yes_ask") is None:
                 continue
-            out.append({"event": p["event"], "kalshi": match[0], "polymarket": mkt, "lead_s": lead, "t": at,
+            out.append({"event": p["event"], "kalshi": match, "polymarket": mkt, "lead_s": lead, "t": at,
                         "strike": p["low"], "k_bid": a.get("yes_bid") or 0.0, "k_ask": a["yes_ask"],
                         "k_bid_size": a.get("yes_bid_size") or 0.0, "k_ask_size": a.get("yes_ask_size") or 0.0,
                         "p_bid": b.get("yes_bid") or 0.0, "p_ask": b["yes_ask"], "p_fee_rate": b.get("fee_rate") or 0.0,
