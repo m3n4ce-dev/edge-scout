@@ -66,6 +66,9 @@ That takes measurement over weeks, not screenshots. The same rules as `meme_trad
 | Kraken SOL | 23.3% | −6.2% | 14.3% | −1.6% | 4.9% | 25.8% |
 
 The longest stretch above 5%/yr was 54 hours (LINK). Spikes revert within days, and a 30–90 day carry at entry-tier fees doesn't clear cash on this evidence. Recording continues to the 2-week report.
+- **M2-pre / M2-pre-b / M2-fwd** (docs/M2_MAKER_HISTORY.md): Kalshi makers' history. Stop on the fill side alone; two cells under a forward test to 11-07.
+- **M3** (docs/M3_BITNOMIAL.md): Bitnomial's fixed funding against Coinbase's floating funding, a 14-day paper position to 10-23.
+- **M4** (docs/M4_LIP.md): quoting for Kalshi's liquidity incentives. The pools were about 2¢ per traded contract on M2-pre-b's series. A fixed random sample of the markets they pay on is recorded from 2026-10-11, and a queue-aware quoting rule is simulated on a 7-day development window and a 14-day holdout.
 - **M2:** freeze the best candidate (rules, sizes, costs, kill criteria) and paper-trade it with realistic fills.
 - **M3:** a tiny live pilot, sized by the owner (e.g. $200–500), only with an explicit OK, reconciled against the paper model.
 - **M4:** scale only what survives, re-measuring at each step.
